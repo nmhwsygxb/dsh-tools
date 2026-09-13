@@ -32,7 +32,9 @@ function getArg(name) {
 }
 
 function auth(req) {
-  if (!TOKEN) return true
+  // 安全（2026-09-13 修复）：未配置 token 时 fail-closed —— 受保护端点一律拒绝，
+  // 而不是默认全开放。防止用户忘记设置 token 导致远程任意命令执行（RCE）。
+  if (!TOKEN) return false
   const body = req.body || {}
   return body.token === TOKEN || req.headers['x-token'] === TOKEN
 }
@@ -196,7 +198,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Remote Agent running on http://0.0.0.0:${PORT}`)
-  console.log(`Token: ${TOKEN ? 'configured' : 'DISABLED (insecure!)'}`)
+  console.log(`Token: ${TOKEN ? 'configured' : 'NOT SET — /exec /upload /logs DISABLED (fail-closed). 必须用 --token 或 REMOTE_TOKEN 启动才能执行命令'}`)
   console.log(`Allow dir: ${ALLOW_DIR || 'not set (use body.dir)'}`)
   console.log(`Audit file: ${AUDIT_FILE}`)
   console.log('')
