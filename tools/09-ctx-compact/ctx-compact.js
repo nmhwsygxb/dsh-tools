@@ -12,6 +12,10 @@
 // { kind: 'retry' } 让原请求重试，避免上下文超限导致任务中断。
 // 每个 agent 最多自动恢复 maxOverflowRetries 次，agent 空闲后重置计数，防死循环。
 //
+// 429 退避重试（2026-09-13）：compactRegion 的摘要 LLM 请求撞 tpm/rpm 限流
+// （429 rate_limit / insufficient_quota）时，最多重试 2 次（指数退避 2s/6s），
+// 减少"会话已超阈值却因限流压不动"的膨胀窗口；非 429 错误照常上抛。
+//
 // 加固点：
 //   * 顶层不依赖 require/__dirname/module（宿主 internal loader 可能不提供），
 //     只用 module.exports 导出；
@@ -164,6 +168,30 @@ module.exports = {
       return { start: nodes[startIdx], end: nodes[endIdx] };
     }
 
+    // 429 (tpm/rpm limit) 退避重试：压缩摘要请求被限流时最多重试 2 次
+    // （指数退避 2s / 6s），减少"会话超阈值却因限流压不动"的膨胀窗口；
+    // 非 429 错误照常上抛，429 重试耗尽后也上抛（本轮放弃，下轮 pre-step 再试）。
+    async function compactRegionWithRetry(compaction, range, agent, signal, trigger) {
+      const attempts = 2;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          return await compaction.compactRegion(range.start, range.end, agent, signal);
+        } catch (error) {
+          const msg = error && error.message ? error.message : String(error);
+          const is429 = /429|rate_limit|insufficient_quota|tpm|rpm/i.test(msg);
+          if (!is429 || attempt >= attempts || (signal && signal.aborted)) {
+            if (is429) {
+              debug('[' + trigger + '] compactRegion 429 retries exhausted, preserving error for this round');
+            }
+            throw error;
+          }
+          const delay = 2000 * Math.pow(2, attempt);
+          debug('[' + trigger + '] compactRegion 429 (attempt=' + (attempt + 1) + '), backoff ' + delay + 'ms: ' + msg);
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+      }
+    }
+
     // 溢出恢复重试计数：agent 空闲后重置，防死循环。
     const overflowRetries = new WeakMap();
 
@@ -211,7 +239,7 @@ module.exports = {
         const balances = balanceAfterIndexes(agent.session);
         const range = selectRange(agent.session, measurement, balances);
         if (!range) { debug('[' + trigger + '] no range (balance/tail)'); break; }
-        const result = await compaction.compactRegion(range.start, range.end, agent, signal);
+        const result = await compactRegionWithRetry(compaction, range, agent, signal, trigger);
         any = true;
         lastShadowed = result.shadowedTokenCount;
         debug('[' + trigger + '] COMPACTED seqs ' + range.start + '-' + range.end +
