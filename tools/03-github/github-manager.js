@@ -129,10 +129,12 @@ try { [Console]::InputEncoding = [System.Text.Encoding]::UTF8 } catch {}
 try {
   $body = [Console]::In.ReadToEnd()
   $headers = @{
-    Authorization = ('Bearer ' + $env:GH_TOKEN)
     'User-Agent' = 'dsh-github-manager'
     Accept = 'application/vnd.github+json'
     'X-GitHub-Api-Version' = '2022-11-28'
+  }
+  if (-not [string]::IsNullOrEmpty($env:GH_TOKEN)) {
+    $headers.Authorization = ('Bearer ' + $env:GH_TOKEN)
   }
   $params = @{
     Uri = $env:GH_URL
@@ -189,11 +191,13 @@ try {
 }
 `;
 
-    async function callGitHub(method, path, body, signal) {
+    async function callGitHub(method, path, body, signal, allowAnon) {
       const token = await resolveToken();
-      if (!token) return { status: 0, ok: false, error: '未设置 GitHub Token。请先运行 gh_set_token 并提供 GitHub Personal Access Token。' };
+      if (!token && !allowAnon) {
+        return { status: 0, ok: false, error: '未设置 GitHub Token。请先运行 gh_set_token 并提供 GitHub Personal Access Token。' };
+      }
       const env = {
-        GH_TOKEN: token,
+        GH_TOKEN: token || '',
         GH_URL: 'https://api.github.com' + path,
         GH_METHOD: String(method || 'GET').toUpperCase(),
       };
@@ -349,7 +353,8 @@ try {
       async (args, exec) => {
         const owner = req(args, 'owner');
         const path = owner ? '/users/' + enc(owner) + '/repos' : '/user/repos';
-        const r = await callGitHub('GET', path + qs({ visibility: args.visibility, per_page: args.per_page }), null, exec.signal);
+        // 传 owner 时是公开仓库列表，允许匿名（无需 token）；自己的仓库列表需要 token
+        const r = await callGitHub('GET', path + qs({ visibility: args.visibility, per_page: args.per_page }), null, exec.signal, !!owner);
         if (!r.ok) return r;
         const items = Array.isArray(r.data) ? r.data.map((it) => pick(it, ['name', 'full_name', 'html_url', 'private', 'description', 'fork', 'default_branch', 'updated_at'])) : [];
         return { status: r.status, ok: true, count: items.length, items };
@@ -399,7 +404,8 @@ try {
         const owner = req(args, 'owner');
         const repo = req(args, 'repo');
         if (!owner || !repo) return err('owner 和 repo 不能为空。');
-        const r = await callGitHub('GET', '/repos/' + enc(owner) + '/' + enc(repo) + '/issues' + qs({ state: args.state || 'open', per_page: args.per_page }), null, exec.signal);
+        // 公开仓库 Issue 列表可匿名读取
+        const r = await callGitHub('GET', '/repos/' + enc(owner) + '/' + enc(repo) + '/issues' + qs({ state: args.state || 'open', per_page: args.per_page }), null, exec.signal, true);
         if (!r.ok) return r;
         const items = Array.isArray(r.data) ? r.data.map((it) => ({
           number: it.number, title: it.title, state: it.state, html_url: it.html_url,
@@ -451,7 +457,8 @@ try {
         const owner = req(args, 'owner');
         const repo = req(args, 'repo');
         if (!owner || !repo) return err('owner 和 repo 不能为空。');
-        const r = await callGitHub('GET', '/repos/' + enc(owner) + '/' + enc(repo) + '/pulls' + qs({ state: args.state || 'open', per_page: args.per_page }), null, exec.signal);
+        // 公开仓库 PR 列表可匿名读取
+        const r = await callGitHub('GET', '/repos/' + enc(owner) + '/' + enc(repo) + '/pulls' + qs({ state: args.state || 'open', per_page: args.per_page }), null, exec.signal, true);
         if (!r.ok) return r;
         const items = Array.isArray(r.data) ? r.data.map((it) => ({
           number: it.number, title: it.title, state: it.state, html_url: it.html_url,
@@ -509,10 +516,16 @@ try {
         const path = req(args, 'path');
         if (!owner || !repo) return err('owner 和 repo 不能为空。');
         if (!path) return err('path 不能为空。');
-        const r = await callGitHub('GET', '/repos/' + enc(owner) + '/' + enc(repo) + '/contents/' + encPath(path) + qs({ ref: args.ref }), null, exec.signal);
+        // 公开仓库文件读取无需 token（匿名可读）
+        const r = await callGitHub('GET', '/repos/' + enc(owner) + '/' + enc(repo) + '/contents/' + encPath(path) + qs({ ref: args.ref }), null, exec.signal, true);
         if (!r.ok) return r;
         let content = '';
         try { content = r.data && r.data.content ? b64decode(r.data.content) : ''; } catch (e) { content = '(内容解码失败)'; }
+        // 大文件（>1MB）Contents API 不返回 content 字段，走 download_url 提示
+        if (content === '' && r.data && r.data.size > 1024 * 1024) {
+          return { status: r.status, ok: true, name: r.data.name, path: r.data.path, sha: r.data.sha, size: r.data.size,
+            content: '', note: '文件超过 1MB，Contents API 不返回内容；请用 gh_download 下载该文件。' };
+        }
         return { status: r.status, ok: true, name: r.data.name, path: r.data.path, sha: r.data.sha, size: r.data.size, content };
       });
 
@@ -579,14 +592,16 @@ try {
           u += '/' + encPath(filePath);
           url = u;
         } else {
-          const meta = await callGitHub('GET', '/repos/' + enc(owner) + '/' + enc(repo), null, exec.signal);
+          // 公开仓库元数据可匿名读取（无需 token）
+          const meta = await callGitHub('GET', '/repos/' + enc(owner) + '/' + enc(repo), null, exec.signal, true);
           if (!meta.ok) return meta;
           const branch = ref || (meta.data && meta.data.default_branch) || 'main';
           filename = repo + '-' + branch + '.zip';
           url = 'https://codeload.github.com/' + enc(owner) + '/' + enc(repo) + '/zip/refs/heads/' + encPath(branch);
         }
         const dest = req(args, 'dest') || ('github-downloads/' + owner + '-' + repo + '/' + filename);
-        const absDest = path.isAbsolute(dest) ? dest : path.resolve(WS_ROOT, dest);
+        // 归一化后再做工作区边界校验（path.isAbsolute 结果不归一，正斜杠绝对路径会被误拒，2026-09-13 修复）
+        const absDest = path.resolve(path.isAbsolute(dest) ? dest : path.resolve(WS_ROOT, dest));
         // 安全：解析后的目标必须位于工作区内，禁止任意路径写（防止模型把文件下载到系统任意位置）。
         const wsRootNorm = path.resolve(WS_ROOT);
         if (!(absDest === wsRootNorm || absDest.startsWith(wsRootNorm + path.sep))) {
