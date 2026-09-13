@@ -13,7 +13,7 @@
 ![License](https://img.shields.io/badge/许可-MIT-8250df)
 ![Privacy](https://img.shields.io/badge/隐私-零个人信息-e2e2e2)
 ![Security](https://img.shields.io/badge/安全-修复通过-31c754)
-![DSH](https://img.shields.io/badge/适配_dsh-0.1.2--0.1.5-6f42c1)
+![DSH](https://img.shields.io/badge/实测_dsh-0.1.2--rc.1-6f42c1)
 
 **拖进来，选一选，装好就能用。**
 
@@ -176,10 +176,12 @@ dsh-tools/
 ## 📋 要求
 
 - Windows + [DeepSeek Harness](https://github.com/deepseek-ai/dsh)（`dsh` 可用）
-- **适配 dsh 版本：`0.1.2` ~ `0.1.5`**（含 `0.1.5-rc.1` / `0.1.5-rc.2` / `0.1.5-alpha.*`，兼容 npm `latest` / `next` / `alpha` 标签）
-  - 验证方式：`npm view @deepseek-ai/dsh version` 或 `dsh --version`
-  - 插件使用的核心 API（`tools.register` / `tools/pre-execute` / `systemPrompt.section` / `approval` / `subprocess`）在 `0.1.x` 系列保持稳定；`ctx-compact` 已适配 `0.1.2+` 的会话事件惰性加载
-  - 若 dsh 发布 `0.2.x` 大版本，请先确认本包 Release 是否有适配更新再安装
+- **dsh 版本兼容性（如实标注）**：
+  - **本包实测验证版本：`0.1.2-rc.1`**（本机运行通过，10 个组件安装/加载正常）
+  - ⚠️ **dsh 0.1.1 → 0.1.2 是一次破坏性大版本**（1079 commits）：`code-mode` 重命名为 PTC 模式、`ApiProxy` 退役改 Remote controllers、client 模块系统重写、模块解析规则变化——**仅适用于 0.1.1 及更早的插件不保证兼容**
+  - 0.1.2 之后的 alpha 迭代（rc.7→alpha.1→alpha.2→alpha.3）还有三次破坏性变更：peer 依赖策略收紧（`autoInstallPeers: false`）、`useSession`→`useChat` 重构、core bundles 改为必须显式声明——这些主要影响 **client 侧 UI 插件**与**依赖管理**
+  - **本包为何不受这些变更影响**：全部 10 个组件是 **host 侧纯工具插件**，零 `@deepseek-ai/*` 依赖、不 import cordis、不注册 client 插槽/UI、不用 `useSession`/`ApiProxy`；只用 `ctx.tools.register` + `subprocess`/`fs`/`approval`/`timer` 等 host 核心服务，这些 API 在 0.1.2+ 保持稳定
+  - **验证方式**：`dsh --version` 查看当前版本
 - PowerShell 5.1+（Windows 自带）
 - 组件 8 需本机安装 Blender
 - 组件 1 需目标机器有 Node.js
