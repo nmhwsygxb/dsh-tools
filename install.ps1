@@ -1,4 +1,4 @@
-﻿# ============================================================
+# ============================================================
 # dsh-tools 一键安装脚本（PowerShell 5.1+）
 #
 # 用法：
@@ -193,6 +193,9 @@ $script:ToolsList = @(
 # ---------- 工具函数 ----------
 function Write-Step([string]$msg) { Write-Host "==> $msg" -ForegroundColor Cyan }
 
+# 适配的 dsh 版本范围（README 与环境要求一致）
+$script:DshCompat = '0.1.2 ~ 0.1.5（含 rc/alpha）'
+
 function Read-Answer([string]$prompt, [string]$default = '') {
   $q = $prompt
   if ($default) { $q = "$prompt [$default]" }
@@ -346,6 +349,7 @@ Write-Host "        $profileDir"
 Write-Host '  [OK] 配置已写入：cordis.patch.yml（原文件已备份）'
 Write-Host ''
 Write-Host '  下一步：' -ForegroundColor Yellow
+Write-Host "    0) 适配 dsh 版本：$script:DshCompat（dsh --version 可查看当前版本）"
 Write-Host '    1) 重启 dsh（配置在启动时加载）'
 if (@($chosen | Where-Object { $_.id -eq 1 }).Count -gt 0) {
   Write-Host '    2) [remote-exec] 把 tools\01-remote-exec\remote-agent-server.js 拷到远程机器并运行：'
