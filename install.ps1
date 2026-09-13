@@ -36,9 +36,9 @@ $PATCH_REMOTE = @'
     - id: remote-agent
       name: './remote-agent.js'
       config:
-        host: '{{REMOTE_HOST}}'
+        host: {{REMOTE_HOST}}
         port: {{REMOTE_PORT}}
-        token: '{{REMOTE_TOKEN}}'
+        token: {{REMOTE_TOKEN}}
 '@
 
 $PATCH_SELF_REVIEW = @'
@@ -46,7 +46,7 @@ $PATCH_SELF_REVIEW = @'
     - id: self-review
       name: './self-review.js'
       config:
-        workspaceRoot: '{{WORKSPACE_ROOT}}'
+        workspaceRoot: {{WORKSPACE_ROOT}}
 '@
 
 $PATCH_GITHUB = @'
@@ -54,7 +54,7 @@ $PATCH_GITHUB = @'
     - id: github-manager
       name: './github-manager.js'
       config:
-        workspaceRoot: '{{WORKSPACE_ROOT}}'
+        workspaceRoot: {{WORKSPACE_ROOT}}
 '@
 
 $PATCH_WEB = @'
@@ -62,7 +62,7 @@ $PATCH_WEB = @'
     - id: web-research
       name: './web-research.js'
       config:
-        workspaceRoot: '{{WORKSPACE_ROOT}}'
+        workspaceRoot: {{WORKSPACE_ROOT}}
 '@
 
 $PATCH_GIT = @'
@@ -70,7 +70,7 @@ $PATCH_GIT = @'
     - id: git-publish
       name: './git-publish.js'
       config:
-        workspaceRoot: '{{WORKSPACE_ROOT}}'
+        workspaceRoot: {{WORKSPACE_ROOT}}
         initialVersion: '1.0.0'
         defaultBranch: 'main'
         autoInit: false
@@ -83,7 +83,7 @@ $PATCH_SANDBOX = @'
     - id: sandbox-escape
       name: './sandbox-escape.js'
       config:
-        workspaceRoot: '{{WORKSPACE_ROOT}}'
+        workspaceRoot: {{WORKSPACE_ROOT}}
 '@
 
 $PATCH_BUG = @'
@@ -91,8 +91,8 @@ $PATCH_BUG = @'
     - id: bug-tracker
       name: './bug-tracker.js'
       config:
-        workspaceRoot: '{{WORKSPACE_ROOT}}'
-        dataDir: '{{DATA_DIR}}'
+        workspaceRoot: {{WORKSPACE_ROOT}}
+        dataDir: {{DATA_DIR}}
 '@
 
 $PATCH_BLENDER = @'
@@ -101,7 +101,7 @@ $PATCH_BLENDER = @'
       name: './blender.js'
       config:
         blenderPath: ''
-        workspace: '{{WORKSPACE_ROOT}}\.dsh-blender'
+        workspace: {{WORKSPACE_ROOT}}\.dsh-blender
         defaultSession: 'main'
         guard: 'block'
         restrictedMode: false
@@ -220,6 +220,13 @@ function Confirm-CopyPlugin([string]$dir, [string]$profile) {
   }
 }
 
+# YAML 单引号安全引用：值含 ' : # 换行 等特殊字符时防止破坏 cordis.patch.yml（防 YAML 注入）
+function ConvertTo-YamlScalar([string]$value) {
+  if ([string]::IsNullOrEmpty($value)) { return "''" }
+  $escaped = $value.Replace("'", "''")
+  return "'$escaped'"
+}
+
 # ---------- 主流程 ----------
 Write-Host ""
 Write-Host "======================================================" -ForegroundColor Cyan
@@ -315,7 +322,11 @@ $sb = New-Object System.Text.StringBuilder
 $writePatch = @($chosen | Where-Object { -not [string]::IsNullOrWhiteSpace($_.patch) })
 foreach ($t in $writePatch) {
   $block = $t.patch
-  foreach ($k in $vars.Keys) { $block = $block.Replace("{{" + $k + "}}", [string]$vars[$k]) }
+  foreach ($k in $vars.Keys) {
+    # YAML 安全替换：值先做单引号转义（防 ' : # 换行等破坏 YAML / 注入）
+    $safeValue = ConvertTo-YamlScalar ([string]$vars[$k])
+    $block = $block.Replace("{{" + $k + "}}", $safeValue)
+  }
   [void]$sb.AppendLine($block.TrimEnd())
   [void]$sb.AppendLine('')
 }
@@ -343,8 +354,10 @@ if (@($chosen | Where-Object { $_.id -eq 1 }).Count -gt 0) {
 }
 if (@($chosen | Where-Object { $_.id -eq 3 }).Count -gt 0 -and $GITHUB_TOKEN) {
   Write-Host '    3) [GitHub] 打开 dsh 对话框输入：gh_set_token 并粘贴你的 token'
-  Write-Host "        （token 已写入 $profileDir\github-token.txt 供你复制）"
+  Write-Host "        （token 已暂存到 $profileDir\github-token.txt 供你复制）"
   Set-Content -Path (Join-Path $profileDir 'github-token.txt') -Value $GITHUB_TOKEN -Encoding UTF8
+  Write-Host '        安全提示：复制完成后请手动删除该文件（或设置好 gh_set_token 后删除），'
+  Write-Host '        避免 PAT 明文长期留在磁盘上。'
 }
 if (@($chosen | Where-Object { $_.id -eq 8 }).Count -gt 0) {
   Write-Host "    4) [Blender] 编辑 $patchFile 中 blender 的 config.blenderPath 为 blender.exe 完整路径"
