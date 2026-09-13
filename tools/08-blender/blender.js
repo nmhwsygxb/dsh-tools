@@ -60,9 +60,11 @@ const DEFAULTS = {
   // 保留临时脚本（排错用）
   keepScripts: false,
   // 危险代码扫描：off | warn | block（block 只拦 high 级别）
-  guard: 'warn',
-  // 受限执行模式：屏蔽危险模块导入、限制 open() 写入路径（防误伤，不是沙箱）
-  restrictedMode: false,
+  guard: 'block',
+  // 受限执行模式：屏蔽危险模块导入、限制 open() 写入路径（防误伤，不是沙箱）。
+  // 默认开启（2026-09-13 安全加固：blender_run_python 在宿主权限下执行任意 Python，
+  // 默认受限可显著降低模型/注入内容读取本机文件的暴露面）。
+  restrictedMode: true,
   blockedModules: [
     'subprocess', 'shutil', 'socket', 'ctypes', 'winreg', 'urllib', 'http',
     'requests', 'ftplib', 'telnetlib', 'multiprocessing', 'pty', 'pexpect'
@@ -2077,14 +2079,15 @@ output: {
     description:
       '会话管理。会话 = 一个独立的 .blend 文件 + renders/ + exports/ 目录，' +
       '用于隔离不同任务，并提供快照/回滚。\n' +
-      'action: list / create / info / reset（清空场景）/ snapshot（存档）/ restore（回滚）/ delete（删除会话）。',
+      'action: list / create / info / reset（清空场景，需 confirm=true）/ snapshot（存档）/ restore（回滚）/ delete（删除会话，需 confirm=true）。',
     parameters: {
       type: 'object',
       properties: {
         action: { type: 'string', enum: ['list', 'create', 'info', 'reset', 'snapshot', 'restore', 'delete'] },
         session: { type: 'string', description: SESSION_DESC },
         snapshot: { type: 'string', description: 'restore 时要恢复的快照文件名（见 info 返回的 snapshots）' },
-        keep: { type: 'number', description: 'snapshot 时最多保留多少个快照（默认 10）' }
+        keep: { type: 'number', description: 'snapshot 时最多保留多少个快照（默认 10）' },
+        confirm: { type: 'boolean', description: 'reset / delete 为破坏性操作，必须显式传 true 才会执行' }
       },
       required: ['action']
     },
@@ -2140,6 +2143,11 @@ output: {
       }
 
       if (action === 'reset') {
+        // 破坏性操作：必须显式 confirm=true，防止模型误调清空场景
+        if (args.confirm !== true) {
+          throw pluginError('confirmation_required', 'reset 会清空当前场景（删除 .blend），必须传 confirm=true 才会执行。',
+            '确认要清空时传 { action: "reset", confirm: true }。');
+        }
         await fsp.rm(sp.blend, { force: true });
         return { ok: true, result: { session: sp.id, reset: true, note: '下一次调用会从空场景开始' } };
       }
@@ -2179,6 +2187,11 @@ output: {
       }
 
       if (action === 'delete') {
+        // 破坏性操作：必须显式 confirm=true，防止模型误调删除整个会话
+        if (args.confirm !== true) {
+          throw pluginError('confirmation_required', 'delete 会永久删除整个会话目录（.blend + renders + exports），必须传 confirm=true 才会执行。',
+            '确认要删除时传 { action: "delete", confirm: true }。');
+        }
         await fsp.rm(sp.dir, { recursive: true, force: true });
         return { ok: true, result: { session: sp.id, deleted: true } };
       }
