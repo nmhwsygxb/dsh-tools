@@ -7,11 +7,12 @@
 为 [DeepSeek Harness](https://github.com/deepseek-ai/dsh) 扩展的一套宿主插件：
 远程执行 · 执行前自动审核 · GitHub · 联网研究 · 本地 Git 发布 · 沙箱逃生 · Bug 知识库 · Blender 3D · 上下文压缩 · 自愈启动
 
-![Version](https://img.shields.io/badge/版本-v1.0.0-2ea44f)
+![Version](https://img.shields.io/badge/版本-v1.0.1-2ea44f)
 ![Components](https://img.shields.io/badge/组件-10-1f6feb)
 ![Platform](https://img.shields.io/badge/平台-Windows-0078d6)
 ![License](https://img.shields.io/badge/许可-MIT-8250df)
 ![Privacy](https://img.shields.io/badge/隐私-零个人信息-e2e2e2)
+![Security](https://img.shields.io/badge/安全-修复通过-31c754)
 
 **拖进来，选一选，装好就能用。**
 
@@ -29,6 +30,18 @@
 | 🧼 **干净无痕** | 所有插件已去除个人目录、IP、Token、会话 ID |
 | 📦 **零依赖** | 插件均为纯 JS，远程 agent 也是单文件纯 Node |
 | ♻️ **可回滚** | 安装自动备份原 `cordis.patch.yml`（`.bak-时间戳`） |
+
+---
+
+## 🛠️ v1.0.1 更新（安全加固 + Bug 修复）
+
+本次 QA 审查修复了 26 项问题，包括：
+
+- **🔴 高危修复**：远程 agent 未设 token 时不再默认全开放（fail-closed，403 拒绝 `/exec`/`/upload`/`/logs`）；Blender 代码执行默认开启受限模式（`restrictedMode: true`）；`auto-heal` 自动禁用插件改为**默认关闭**（需 `--heal-auto-disable` 显式开启，防误判禁用健康插件）
+- **🟡 中危修复**：Blender 会话 `delete`/`reset` 必须 `confirm: true`；GitHub 公开仓库只读（读文件/列表/下载）无需 token；Bing 搜索 URL 解码修复；`install.ps1` YAML 注入转义 + 安装器纯英文防乱码
+- **🟢 细节修复**：>1MB 文件读取提示、`per_page` 参数钳制、路径归一化等
+
+> 完整审计报告见 [CHANGELOG](#-changelog)。
 
 ---
 
