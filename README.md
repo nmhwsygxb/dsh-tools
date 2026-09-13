@@ -177,11 +177,15 @@ dsh-tools/
 
 - Windows + [DeepSeek Harness](https://github.com/deepseek-ai/dsh)（`dsh` 可用）
 - **dsh 版本兼容性（如实标注）**：
-  - **本包实测验证版本：`0.1.2-rc.1`**（本机运行通过，10 个组件安装/加载正常）
+  - **实测验证版本：`0.1.2-rc.1`**（本机运行通过，10 个组件安装/加载正常）
+  - **源码级验证版本：`0.1.5-rc.1`（npm latest）**——逐项对比了 0.1.2→0.1.5 的服务目录与方法签名：
+    - 全部 8 个本包依赖的服务（`approval` / `credentials` / `fs` / `subprocess` / `timer` / `tools` / `sandboxPolicy` / `systemPrompt`）在 0.1.5 **均存在，无一删除**（0.1.5 仅新增 `fileUploads`/`sessionFeedback`/`workspaceFiles` 3 个）
+    - `tools.register` 签名逐字一致（含 `tools/pre-execute` 瀑布）；`approval.request`、`credentials.*`、`timer.*`、`fs.*` 方法签名一致；`subprocess` 3 个方法（`resolveExecutable`/`spawn`/`spawnTerminal`）签名一致
+    - ⚠️ 唯一语义差异：0.1.5 的 `subprocess.spawn` 描述为"同步返回 live handle"，terminate 树范围描述有微调——**静态匹配通过，但尚未在 0.1.5 真机冒烟**
   - ⚠️ **dsh 0.1.1 → 0.1.2 是一次破坏性大版本**（1079 commits）：`code-mode` 重命名为 PTC 模式、`ApiProxy` 退役改 Remote controllers、client 模块系统重写、模块解析规则变化——**仅适用于 0.1.1 及更早的插件不保证兼容**
   - 0.1.2 之后的 alpha 迭代（rc.7→alpha.1→alpha.2→alpha.3）还有三次破坏性变更：peer 依赖策略收紧（`autoInstallPeers: false`）、`useSession`→`useChat` 重构、core bundles 改为必须显式声明——这些主要影响 **client 侧 UI 插件**与**依赖管理**
-  - **本包为何不受这些变更影响**：全部 10 个组件是 **host 侧纯工具插件**，零 `@deepseek-ai/*` 依赖、不 import cordis、不注册 client 插槽/UI、不用 `useSession`/`ApiProxy`；只用 `ctx.tools.register` + `subprocess`/`fs`/`approval`/`timer` 等 host 核心服务，这些 API 在 0.1.2+ 保持稳定
-  - **验证方式**：`dsh --version` 查看当前版本
+  - **本包为何兼容 0.1.2~0.1.5**：全部 10 个组件是 **host 侧纯工具插件**，零 `@deepseek-ai/*` 依赖、不 import cordis、不注册 client 插槽/UI、不用 `useSession`/`ApiProxy`；只用 `ctx.tools.register` + host 核心服务（上述 8 个，源码对比确认 0.1.5 未删改）
+  - **验证方式**：`dsh --version` 查看当前版本；升级 dsh 后建议跑一次冒烟（安装后 `dsh web` 启动正常 + 任意一个工具能被调用）
 - PowerShell 5.1+（Windows 自带）
 - 组件 8 需本机安装 Blender
 - 组件 1 需目标机器有 Node.js
