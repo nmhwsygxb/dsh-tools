@@ -37,6 +37,11 @@
 //      没问题，插件树里"哪里出问题就禁用哪里"——包括 workspace / session / storage
 //      之类基础项，先保证服务能起来；修好根因后执行 --heal-reset 整体恢复。
 //      若仍想保护某些 id，可设环境变量 AUTO_HEAL_EXTRA_PROTECT="id1,id2"。
+//   4) 2026-09-13 安全加固：基于错误文本启发式解析可能误判，误判会永久静默禁用健康插件。
+//      → 自动禁用改为默认关闭：必须显式传 --heal-auto-disable（或设 AUTO_HEAL_AUTO_DISABLE=1）
+//      才会把解析出的插件写进禁用清单；默认只打印"建议禁用的插件清单"并中止启动，由用户人工确认。
+//   5) 2026-09-13 dumpEntryIdMap() 增加超时（与内核检查同级别），防止
+//      `dsh web --dump-config` 卡住导致自愈流程永久挂起。
 'use strict';
 
 const { spawn } = require('child_process');
@@ -211,6 +216,7 @@ function parseEntryIds(stderrText, stdoutText, patchText, extraMap) {
 
 // 通过 `dsh web --dump-config` 构建完整 name -> id 映射（覆盖 bundle 插件）。
 // dump-config 只解析组合树，不启动服务，很快；失败时返回空 Map。
+// 2026-09-13：加超时（KERNEL_TIMEOUT_MS 同级），防止 dump-config 卡住挂起整个自愈流程。
 function dumpEntryIdMap(bin) {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [bin, 'web', '--dump-config'], {
@@ -220,9 +226,12 @@ function dumpEntryIdMap(bin) {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let out = '';
-    child.stdout.on('data', (d) => { out += d.toString(); });
-    child.on('error', () => resolve(new Map()));
-    child.on('exit', () => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      try { child.kill(); } catch (e) { /* 已退出 */ }
       const map = new Map();
       let currentId = null;
       for (const line of out.split('\n')) {
@@ -232,7 +241,11 @@ function dumpEntryIdMap(bin) {
         else if (nameM && currentId) map.set(nameM[1].trim(), currentId);
       }
       resolve(map);
-    });
+    };
+    const timer = setTimeout(finish, KERNEL_TIMEOUT_MS);
+    child.stdout.on('data', (d) => { out += d.toString(); });
+    child.on('error', () => finish());
+    child.on('exit', () => finish());
   });
 }
 
@@ -403,6 +416,19 @@ async function main() {
     const newlyAdded = parsed.filter((id) => !disabled.has(id) && isPlausibleId(id) && !isHardCore(id));
     if (newlyAdded.length === 0) {
       log(`解析出的插件（${parsed.join(', ')}）已在禁用清单中或属于内核硬核，停止重试。`);
+      break;
+    }
+    // 2026-09-13 安全加固：默认只报告不自动禁用（启发式解析可能误判健康插件）。
+    // 必须显式 --heal-auto-disable 或 AUTO_HEAL_AUTO_DISABLE=1 才写禁用清单。
+    const autoDisable = argv.includes('--heal-auto-disable')
+      || String(process.env.AUTO_HEAL_AUTO_DISABLE || '') === '1';
+    if (!autoDisable) {
+      log('=== 自动禁用已默认关闭（防止误判永久禁用健康插件）===');
+      log(`检测到可能出问题的插件: ${newlyAdded.join(', ')}`);
+      log('请人工确认后，以下两种方式之一处理：');
+      log('  a) 确认无误，显式启用自动禁用：node auto-heal.js --heal-auto-disable（或设 AUTO_HEAL_AUTO_DISABLE=1）');
+      log('  b) 手工把确认的插件 id 追加到 ' + DISABLED_FILE);
+      log('本次不写入禁用清单，正式启动已取消（避免带病启动）。');
       break;
     }
     for (const id of newlyAdded) disabled.add(id);
