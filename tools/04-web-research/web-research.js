@@ -411,9 +411,17 @@ try {
             let hm;
             while ((hm = h2Re.exec(html)) !== null && bingItems.length < max) {
               let href = hm[1];
-              // Bing 重定向链接（/ck/a?...）解码
+              // Bing 重定向链接（/ck/a?...）解码：u=a1 后是 base64url 编码的真实 URL
+              // （不是 percent-encoding，decodeURIComponent 解不出，2026-09-13 修复）
               const ck = (href.match(/[?&]u=a1([^&]*)&/) || [])[1];
-              if (ck) { try { href = decodeURIComponent(ck); } catch (e) { /* keep */ } }
+              if (ck) {
+                try {
+                  const b64 = ck.replace(/-/g, '+').replace(/_/g, '/');
+                  const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4);
+                  const decoded = Buffer.from(padded, 'base64').toString('utf8');
+                  if (/^https?:\/\//.test(decoded)) href = decoded;
+                } catch (e) { /* keep original */ }
+              }
               else if (/^\/\//.test(href)) href = 'https:' + href;
               const title = stripTags(hm[2]);
               if (title && href.startsWith('http')) bingItems.push({ title, url: href, snippet: '' });
