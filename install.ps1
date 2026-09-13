@@ -193,8 +193,8 @@ $script:ToolsList = @(
 # ---------- 工具函数 ----------
 function Write-Step([string]$msg) { Write-Host "==> $msg" -ForegroundColor Cyan }
 
-# 适配的 dsh 版本范围（README 与环境要求一致）
-$script:DshCompat = '0.1.2 ~ 0.1.5（含 rc/alpha）'
+# 实测验证的 dsh 版本（README「要求」章节有完整兼容性说明）
+$script:DshCompat = '实测 0.1.2-rc.1；host 侧插件，0.1.2+ 通用'
 
 function Read-Answer([string]$prompt, [string]$default = '') {
   $q = $prompt
