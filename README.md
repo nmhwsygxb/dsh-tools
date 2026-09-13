@@ -7,12 +7,13 @@
 为 [DeepSeek Harness](https://github.com/deepseek-ai/dsh) 扩展的一套宿主插件：
 远程执行 · 执行前自动审核 · GitHub · 联网研究 · 本地 Git 发布 · 沙箱逃生 · Bug 知识库 · Blender 3D · 上下文压缩 · 自愈启动
 
-![Version](https://img.shields.io/badge/版本-v1.0.1-2ea44f)
+![Version](https://img.shields.io/badge/版本-v1.0.0-2ea44f)
 ![Components](https://img.shields.io/badge/组件-10-1f6feb)
 ![Platform](https://img.shields.io/badge/平台-Windows-0078d6)
 ![License](https://img.shields.io/badge/许可-MIT-8250df)
 ![Privacy](https://img.shields.io/badge/隐私-零个人信息-e2e2e2)
 ![Security](https://img.shields.io/badge/安全-修复通过-31c754)
+![DSH](https://img.shields.io/badge/适配_dsh-0.1.2--0.1.5-6f42c1)
 
 **拖进来，选一选，装好就能用。**
 
@@ -175,6 +176,10 @@ dsh-tools/
 ## 📋 要求
 
 - Windows + [DeepSeek Harness](https://github.com/deepseek-ai/dsh)（`dsh` 可用）
+- **适配 dsh 版本：`0.1.2` ~ `0.1.5`**（含 `0.1.5-rc.1` / `0.1.5-rc.2` / `0.1.5-alpha.*`，兼容 npm `latest` / `next` / `alpha` 标签）
+  - 验证方式：`npm view @deepseek-ai/dsh version` 或 `dsh --version`
+  - 插件使用的核心 API（`tools.register` / `tools/pre-execute` / `systemPrompt.section` / `approval` / `subprocess`）在 `0.1.x` 系列保持稳定；`ctx-compact` 已适配 `0.1.2+` 的会话事件惰性加载
+  - 若 dsh 发布 `0.2.x` 大版本，请先确认本包 Release 是否有适配更新再安装
 - PowerShell 5.1+（Windows 自带）
 - 组件 8 需本机安装 Blender
 - 组件 1 需目标机器有 Node.js
