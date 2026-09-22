@@ -1,0 +1,49 @@
+# dsh-tools bundle layer: 一次性插入 9 个工具插件（host 侧，全部全局生效）。
+# 通过 dsh plugin add github:nmhwsygxb/dsh-tools 安装后由 dsh 自动加载。
+# name 使用相对路径（基于本文件所在目录解析，指向 tools/ 下的插件 js）。
+#
+# 说明：
+#   - auto-heal（自愈启动器）不是插件，是独立 Node 启动器：node tools/10-auto-heal/auto-heal.js
+#   - remote-agent-server.js 是远程端脚本，复制到远程机器运行，不进本 profile
+#   - 不需要的组件：删掉对应的一行 insert 后重启 dsh 即可
+- insert:
+    - id: remote-agent
+      name: './tools/01-remote-exec/remote-agent.js'
+      config:
+        host: '127.0.0.1'
+        port: 3788
+        token: ''
+
+- insert:
+    - id: self-review
+      name: './tools/02-self-review/self-review.js'
+
+- insert:
+    - id: github-manager
+      name: './tools/03-github/github-manager.js'
+
+- insert:
+    - id: web-research
+      name: './tools/04-web-research/web-research.js'
+
+- insert:
+    - id: git-publish
+      name: './tools/05-git-publish/git-publish.js'
+
+- insert:
+    - id: sandbox-escape
+      name: './tools/06-sandbox-escape/sandbox-escape.js'
+
+- insert:
+    - id: bug-tracker
+      name: './tools/07-bug-tracker/bug-tracker.js'
+
+- insert:
+    - id: blender
+      name: './tools/08-blender/blender.js'
+      config:
+        blenderPath: ''
+
+- insert:
+    - id: ctx-compact
+      name: './tools/09-ctx-compact/ctx-compact.js'
