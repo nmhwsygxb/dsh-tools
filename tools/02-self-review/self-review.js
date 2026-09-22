@@ -28,15 +28,31 @@
 const path = require('path');
 const fs = require('fs');
 
-const AUDIT_LOG = process.env.SELF_REVIEW_LOG
-  ? path.resolve(process.env.SELF_REVIEW_LOG)
-  : path.join(__dirname, 'self-review-audit.log');
+// 审计日志路径：延迟解析（第一次写入时决定）。
+// 优先写工作区（sandboxPolicy.workspaceRoot，跨 bundle / install.bat 两种安装方式一致，
+// 且卸载/升级 dsh-tools 包不丢审计）；拿不到才回退插件目录（旧行为）。
+let _auditLog = null;
+function auditLogOf(ctx) {
+  if (_auditLog) return _auditLog;
+  let p = process.env.SELF_REVIEW_LOG;
+  if (!p) {
+    try {
+      const sandbox0 = ctx && ctx.get ? ctx.get('sandboxPolicy') : undefined;
+      if (sandbox0 && sandbox0.workspaceRoot) p = path.join(sandbox0.workspaceRoot, '.dsh-audit', 'self-review-audit.log');
+    } catch (e) { /* 拿不到就回退 */ }
+  }
+  if (!p) p = path.join(__dirname, 'self-review-audit.log');
+  _auditLog = path.resolve(p);
+  return _auditLog;
+}
 const MAX_COMMAND_CHARS = 4000;   // 扫描/记录的命令文本上限（超长截断，扫描仍用全文）
 const MAX_TARGETS = 12;           // 涉及的路径最多记录条数
 
-function appendAudit(line) {
+function appendAudit(ctx, line) {
   try {
-    fs.appendFileSync(AUDIT_LOG, `[${new Date().toISOString()}] ${line}\n`);
+    const file = auditLogOf(ctx);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.appendFileSync(file, `[${new Date().toISOString()}] ${line}\n`);
   } catch (e) { /* 审计文件写失败不阻塞 */ }
 }
 
@@ -116,7 +132,8 @@ const COMMAND_TOOLS = new Set([
 function isWriteLikeTool(name) {
   if (COMMAND_TOOLS.has(name)) return true;
   if (typeof name !== 'string') return false;
-  return /^(gh_write_file|gh_create_repo|gh_create_issue|gh_create_pr|gh_download|wr_download|job_kill|bug_new|bug_update)$/.test(name);
+  // gh_api 可携 POST/PATCH/DELETE 写操作，纳入旁路（仅留痕，不阻断）
+  return /^(gh_write_file|gh_create_repo|gh_create_issue|gh_create_pr|gh_download|gh_api|wr_download|job_kill|bug_new|bug_update)$/.test(name);
 }
 
 // 提取工具调用里的"命令原文"（只提取真正代表命令/代码的字段；
@@ -289,7 +306,7 @@ module.exports = {
         cautionN: scanned.cautionN,
         findings: scanned.findings.slice(0, 20),
       };
-      appendAudit(`${j(record.ts)} session=${j(record.session)} phase=${phase} tool=${j(record.tool)} mode=${j(record.mode)} policy=${j(record.approvalPolicy)} verdict=${record.verdict} action=${j(record.action)} command=${j(record.command)} findings=${j(scanned.findings.map((f) => f.level + ':' + f.message))}`);
+      appendAudit(ctx, `${j(record.ts)} session=${j(record.session)} phase=${phase} tool=${j(record.tool)} mode=${j(record.mode)} policy=${j(record.approvalPolicy)} verdict=${record.verdict} action=${j(record.action)} command=${j(record.command)} findings=${j(scanned.findings.map((f) => f.level + ':' + f.message))}`);
 
       return {
         verdict: scanned.verdict,
@@ -303,7 +320,7 @@ module.exports = {
         dangerCount: scanned.dangerN,
         cautionCount: scanned.cautionN,
         environment: env,
-        auditLog: AUDIT_LOG,
+        auditLog: auditLogOf(ctx),
       };
     }
 
