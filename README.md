@@ -58,6 +58,8 @@ dsh plugin --profile web add github:nmhwsygxb/dsh-tools
 dsh plugin add github:nmhwsygxb/dsh-tools
 ```
 
+> ⚠️ **前置条件**：需要 [pnpm](https://pnpm.io/) 在 PATH 上（`dsh plugin` 是 pnpm 转发器，缺 pnpm 会报 `pnpm not found`）。本包无 prepare 脚本，通常不会触发 pnpm 的 allowBuilds 拦截；若 pnpm 提示构建脚本被阻止，按提示把仓库名加入 profile 的 `pnpm-workspace.yaml` 的 `allowBuilds` 后重试。
+
 安装流程（已在本机 0.1.2-rc.1 端到端验证）：
 
 1. pnpm 从 GitHub 拉取仓库并装入 `profile/node_modules/dsh-tools`
@@ -67,6 +69,7 @@ dsh plugin add github:nmhwsygxb/dsh-tools
 
 > 💡 不需要的组件：编辑 `profile\node_modules\dsh-tools\cordis.patch.yml`，删掉对应的一行 `insert` 后重启。
 > 💡 凭据（GitHub token / 远程 host·port·token）安装后运行 `gh_set_token` 或编辑 patch 的 `config` 段填入。
+> 💡 **建议配置 `workspaceRoot`**（bundle 方式不会自动填）：web-research 下载 / github 文件 / bug-tracker 数据 / git-publish 仓库 等默认用 dsh 启动目录，可能不是你的工作区。编辑 patch 给对应插件加 `workspaceRoot: <你的工作区路径>`，如 `D:\work`（YAML 字符串引号包裹）。
 
 ## 🚀 安装方式二：拖拽安装（install.bat，可自选组件）
 
@@ -148,7 +151,7 @@ node remote-agent-server.js --port 3788 --token mysecret --allow-dir D:\uploads
 
 | 组件 | 安装时 | 运行时 |
 |------|--------|--------|
-| GitHub | 输入 PAT，保存到 `profile\github-token.txt` | 在 dsh 对话执行 `gh_set_token` 粘贴一次 |
+| GitHub | 安装后运行 `gh_set_token` 粘贴一次，存入 dsh 凭据服务 | 会话内已保存，`gh_clear_token` 清除 |
 | 远程执行 | 输入 host / port / token，写入 patch | 远程端用 `--token` 启动 |
 
 所有凭据只落在**你自己机器**的 profile 目录，**仓库内不保存任何 Token**。
