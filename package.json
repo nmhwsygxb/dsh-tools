@@ -1,0 +1,31 @@
+{
+  "name": "dsh-tools",
+  "version": "1.0.0",
+  "description": "DeepSeek Harness 工具套餐：远程执行 / 执行前自动审核 / GitHub / 联网研究 / 本地 Git 发布 / 沙箱逃生 / Bug 知识库 / Blender / 上下文压缩 / 自愈启动器。标准 dsh bundle，支持 dsh plugin add 一键安装。",
+  "type": "commonjs",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "tools",
+    "install.bat",
+    "install.ps1",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "plugin",
+    "ai-tools",
+    "automation"
+  ]
+}
