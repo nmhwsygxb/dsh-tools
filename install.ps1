@@ -1,4 +1,4 @@
-# ============================================================
+﻿# ============================================================
 # dsh-tools 一键安装脚本（PowerShell 5.1+）
 #
 # 用法：
@@ -104,7 +104,7 @@ $PATCH_BLENDER = @'
         workspace: {{WORKSPACE_ROOT}}\.dsh-blender
         defaultSession: 'main'
         guard: 'block'
-        restrictedMode: false
+        restrictedMode: true
 '@
 
 $PATCH_CTX = @'
@@ -183,7 +183,7 @@ $script:ToolsList = @(
   }
   @{
     id = 10; dir = '10-auto-heal'; name = 'auto-heal 自愈启动器'
-    desc = '带内核检查的 dsh 启动包装：内核 OK 则自动禁用故障插件继续启动。用 node auto-heal.js 启动'
+    desc = '带内核检查的 dsh 启动包装：内核 OK 则自动禁用故障插件继续启动。用 node auto-heal.js 启动（bundle 安装需 --profile-dir）'
     files = @('auto-heal.js')
     ask = 'none'
     patch = ''
@@ -286,9 +286,9 @@ if (@($chosen | Where-Object { $_.id -eq 1 }).Count -gt 0) {
 $GITHUB_TOKEN = ''
 if (@($chosen | Where-Object { $_.id -eq 3 }).Count -gt 0) {
   Write-Step "GitHub 配置"
-  Write-Host '  提示：gh_* 工具的 token 存 dsh 凭据存储，请在此输入后由脚本写入 profile\github-token.txt；'
-  Write-Host '  安装完成后在 dsh 里运行 gh_set_token 并粘贴同一 token 一次即可。'
-  $GITHUB_TOKEN = Read-Answer 'GitHub Personal Access Token（可回车跳过）' ''
+  Write-Host '  提示：gh_* 工具的 token 存 dsh 凭据存储；安装完成后在 dsh 里运行 gh_set_token '
+  Write-Host '  并粘贴同一 token 一次即可（本脚本不再把 token 写入磁盘，避免明文泄露）。'
+  $GITHUB_TOKEN = Read-Answer 'GitHub Personal Access Token（可回车跳过，仅用于安装时打印）' ''
 }
 $DATA_DIR = ''
 if (@($chosen | Where-Object { $_.id -eq 7 }).Count -gt 0) {
@@ -358,10 +358,10 @@ if (@($chosen | Where-Object { $_.id -eq 1 }).Count -gt 0) {
 }
 if (@($chosen | Where-Object { $_.id -eq 3 }).Count -gt 0 -and $GITHUB_TOKEN) {
   Write-Host '    3) [GitHub] 打开 dsh 对话框输入：gh_set_token 并粘贴你的 token'
-  Write-Host "        （token 已暂存到 $profileDir\github-token.txt 供你复制）"
-  Set-Content -Path (Join-Path $profileDir 'github-token.txt') -Value $GITHUB_TOKEN -Encoding UTF8
-  Write-Host '        安全提示：复制完成后请手动删除该文件（或设置好 gh_set_token 后删除），'
-  Write-Host '        避免 PAT 明文长期留在磁盘上。'
+  Write-Host '        （token 直接显示在下方仅供复制，不写入磁盘：'
+  Write-Host "           $GITHUB_TOKEN ）"
+  Write-Host '        PAT 明文落盘有泄露风险（任何能读 profile 目录的进程即可窃取），'
+  Write-Host '        因此安装脚本不再把 token 写入文件；gh_set_token 会保存到系统凭据存储。'
 }
 if (@($chosen | Where-Object { $_.id -eq 8 }).Count -gt 0) {
   Write-Host "    4) [Blender] 编辑 $patchFile 中 blender 的 config.blenderPath 为 blender.exe 完整路径"
