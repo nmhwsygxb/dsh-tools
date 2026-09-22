@@ -46,7 +46,29 @@
 
 ---
 
-## 🚀 快速开始（30 秒）
+## 🚀 安装方式一：dsh plugin add 一键安装（标准 dsh bundle，推荐）
+
+本仓库是**标准 dsh 插件包**（`package.json` 声明 `dsh.bundle`），dsh 官方插件安装器直接支持：
+
+```bash
+# 一条命令装全部 9 个 host 工具插件
+dsh plugin --profile web add github:nmhwsygxb/dsh-tools
+
+# 或简写（默认 web profile）
+dsh plugin add github:nmhwsygxb/dsh-tools
+```
+
+安装流程（已在本机 0.1.2-rc.1 端到端验证）：
+
+1. pnpm 从 GitHub 拉取仓库并装入 `profile/node_modules/dsh-tools`
+2. dsh 检测到 `dsh.bundle.patch` 声明，自动把 `dsh-tools` 加入 `dsh.profile.bundles` 层栈
+3. 启动 dsh 时加载 `cordis.patch.yml`，9 个工具插件（remote-agent / self-review / github-manager / web-research / git-publish / sandbox-escape / bug-tracker / blender / ctx-compact）全部注册
+4. 重启 dsh，完成 🎉
+
+> 💡 不需要的组件：编辑 `profile\node_modules\dsh-tools\cordis.patch.yml`，删掉对应的一行 `insert` 后重启。
+> 💡 凭据（GitHub token / 远程 host·port·token）安装后运行 `gh_set_token` 或编辑 patch 的 `config` 段填入。
+
+## 🚀 安装方式二：拖拽安装（install.bat，可自选组件）
 
 ```bash
 # 获取工具包
@@ -62,6 +84,7 @@ git clone https://github.com/nmhwsygxb/dsh-tools.git
 4. 重启 dsh，完成 🎉
 
 > 💡 也支持把下载的 `.zip` 或解压后的文件夹**直接拖到 `install.bat` 图标上**，自动解压安装。
+> 💡 两种安装方式等价：`dsh plugin add` 装全部 9 个插件；`install.bat` 可勾选子集 + 交互填凭据。
 
 ### 命令行方式
 
@@ -99,7 +122,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 `
 | 7 | 🐞 **Bug 知识库** | 跨会话 bug 建档 / 根因 / 修复全生命周期 | `bug_*` |
 | 8 | 🎨 **Blender 3D** | 建模 / 渲染 / 导出（需本机 Blender） | `blender_*` |
 | 9 | 🧠 **上下文压缩** | 长会话自动压缩（默认 200k tokens） | — |
-| 10 | 💉 **自愈启动器** | 内核检查 + 故障插件自动禁用继续启动 | `node auto-heal.js` |
+| 10 | 💉 **自愈启动器** | 内核检查 + 故障插件自动禁用继续启动 | `node auto-heal.js`（bundle 安装需 `--profile-dir <profile路径>`） |
 
 ---
 
@@ -136,8 +159,11 @@ node remote-agent-server.js --port 3788 --token mysecret --allow-dir D:\uploads
 
 ```
 dsh-tools/
-├── install.bat              双击 / 拖拽安装入口
-├── install.ps1              安装主脚本（自选组件 + 凭据交互）
+├── package.json            标准 dsh bundle 清单（声明 dsh.bundle.patch）→ dsh plugin add 用
+├── cordis.patch.yml        bundle 插件层：9 行 insert 指向 tools/ 下各插件
+├── index.js                包入口占位（bundle 纯 host 插件，无逻辑）
+├── install.bat             双击 / 拖拽安装入口（可自选组件）
+├── install.ps1             安装主脚本（自选组件 + 凭据交互）
 ├── README.md
 └── tools/
     ├── 01-remote-exec/      remote-agent.js + remote-agent-server.js
@@ -149,17 +175,20 @@ dsh-tools/
     ├── 07-bug-tracker/      bug-tracker.js
     ├── 08-blender/          blender.js
     ├── 09-ctx-compact/      ctx-compact.js
-    └── 10-auto-heal/        auto-heal.js（启动器）
+    └── 10-auto-heal/        auto-heal.js（独立启动器，不进 bundle）
 ```
 
 ---
 
 ## 🔄 安装行为说明
 
-- 插件 JS → `%USERPROFILE%\.dsh\profiles\<profile>\`
+- 插件 JS → `%USERPROFILE%\.dsh\profiles\<profile>\`（install.bat 方式）
+- **bundle 方式**（`dsh plugin add`）：插件装到 `profiles\<profile>\node_modules\dsh-tools\`，卸载/升级包时随包删除
 - 生成 / 合并 `cordis.patch.yml`，**原文件自动备份**
 - 公共配置写入 patch：`workspaceRoot` / `dataDir` / `host` / `port` / `token`
-- 需重启 dsh 生效；卸载 = 删除对应 js + 注释 patch 行
+- **审计日志不随包丢失**：`self_review` / `sandbox_escape` 的审计日志优先写入工作区 `.dsh-audit\`（`<workspaceRoot>\.dsh-audit\`），拿不到工作区才写插件目录
+- `auto-heal` 独立启动器：install.bat 复制到 profile 根直接用；bundle 安装时在 node_modules 里，需 `node auto-heal.js --profile-dir <profile路径>`
+- 需重启 dsh 生效；卸载 = `dsh plugin remove dsh-tools`（bundle）或删除对应 js + 注释 patch 行（install.bat）
 - 全程无需管理员权限
 
 ---
