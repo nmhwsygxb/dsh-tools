@@ -37,11 +37,15 @@ function getFs() {
 }
 
 function debugLogPath() {
+  // 优先 cwd（dsh 启动目录，通常为用户工作目录；bundle 安装时 __dirname 会指向
+  // node_modules 深路径，随包卸载丢失，故不再优先）。__dirname 仅作兜底。
+  try {
+    if (typeof process !== 'undefined' && process.cwd) return process.cwd() + '/ctx-compact-debug.log';
+  } catch (e) { /* fallthrough */ }
   try {
     if (typeof __dirname !== 'undefined' && __dirname) {
       return __dirname + '/ctx-compact-debug.log';
     }
-    if (typeof process !== 'undefined' && process.cwd) return process.cwd() + '/ctx-compact-debug.log';
   } catch (e) { /* fallthrough */ }
   return null;
 }
@@ -85,7 +89,11 @@ module.exports = {
     const retainTailTokens = config.retainTailTokens ?? 40000;
     const maxRounds = config.maxRounds ?? 3;
     const enabled = config.enabled !== false;
-    const maxOverflowRetries = config.maxOverflowRetries ?? 1;
+    // maxOverflowRetries：溢出自动恢复的最大次数，默认 1。归一化为非负整数：
+    // 字符串 "2" / 小数 1.7 都转成有效整数；NaN / 负数视为 0（不启用溢出恢复）。
+    // 注意用 ?? 保留默认值 1：Number(undefined)=NaN 会把默认吞成 0。
+    const rawMax = config.maxOverflowRetries == null ? 1 : Number(config.maxOverflowRetries);
+    const maxOverflowRetries = Number.isFinite(rawMax) && rawMax > 0 ? Math.floor(rawMax) : 0;
     // 按会话覆盖阈值：{ '<sessionId>': <tokens> }，命中该会话时用覆盖值，
     // 未配置的会话一律用 thresholdTokens。用于"只改这一个对话，其他对话不变"。
     const sessionThresholds = config.sessionThresholds || {};
