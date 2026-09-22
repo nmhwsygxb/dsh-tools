@@ -28,7 +28,23 @@
 const path = require('path');
 const fs = require('fs');
 
-const AUDIT_LOG = path.join(__dirname, 'sandbox-escape-audit.log');
+// 审计日志路径：延迟解析（第一次写入时决定），优先写工作区
+// （sandboxPolicy.workspaceRoot），bundle / install.bat 两种安装方式行为一致，
+// 且卸载/升级 dsh-tools 包不丢审计；拿不到才回退插件目录（旧行为）。
+let _auditLog = null;
+function auditLogOf(ctx) {
+  if (_auditLog) return _auditLog;
+  let p = process.env.SANDBOX_ESCAPE_LOG;
+  if (!p) {
+    try {
+      const sandbox0 = ctx && ctx.get ? ctx.get('sandboxPolicy') : undefined;
+      if (sandbox0 && sandbox0.workspaceRoot) p = path.join(sandbox0.workspaceRoot, '.dsh-audit', 'sandbox-escape-audit.log');
+    } catch (e) { /* 拿不到就回退 */ }
+  }
+  if (!p) p = path.join(__dirname, 'sandbox-escape-audit.log');
+  _auditLog = path.resolve(p);
+  return _auditLog;
+}
 const DEFAULT_TIMEOUT_MS = 120000;
 const MAX_TIMEOUT_MS = 600000;
 const TOOL_TIMEOUT_MS = 900000; // 工具级总上限：两次审批等待 + 命令执行
@@ -39,35 +55,57 @@ const MAX_STDERR_CHARS = 10000;  // 返回给模型的 stderr 上限
 const COLLECT_STDOUT_BYTES = 512 * 1024;
 const COLLECT_STDERR_BYTES = 256 * 1024;
 
-function appendAudit(line) {
+function appendAudit(ctx, line) {
   try {
-    fs.appendFileSync(AUDIT_LOG, `[${new Date().toISOString()}] ${line}\n`);
+    const file = auditLogOf(ctx);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.appendFileSync(file, `[${new Date().toISOString()}] ${line}\n`);
   } catch (e) { /* 审计文件写失败不阻塞执行 */ }
 }
 
 // 审计/提示里的字段统一 JSON 转义，保证日志单行可解析
 const j = (s) => JSON.stringify(String(s));
 
-// 保留末尾 n 字符，并标注省略量
+// 保留末尾 n 字符，并标注省略量（用于命令输出——尾部通常最有信息量）
 function truncate(s, n) {
   const str = String(s);
   if (str.length <= n) return str;
   return str.slice(-n) + `\n...[输出被截断，省略 ${str.length - n} 字符]`;
 }
 
-// 高风险破坏性模式（尽力识别并强制两次确认；真正控制仍是用户审批）
+// 保留开头 n 字符，并标注省略量（用于审批 reason——开头是"为什么"的关键说明，
+// 尾部被截掉比头部被截掉更有用）
+function truncateHead(s, n) {
+  const str = String(s);
+  if (str.length <= n) return str;
+  return str.slice(0, n) + `\n...[理由被截断，省略 ${str.length - n} 字符]`;
+}
+
+// 高风险破坏性模式（尽力识别并强制两次确认；真正控制仍是用户审批）。
+// BUG-316: 补充 PowerShell/cmd 别名(rd/sfc?)与等价写法，尽量缩小"绕过二次确认"的面。
 const HIGH_RISK_PATTERNS = [
   /\bRemove-Item\b[^\n]*?(?:-Recurse|-Force|-Confirm:\$false)/i,
   /\b(?:rm|rmdir|del|erase)\b[^\n]*?(?:\/[sqrf]|\s+-\s?[sqrf])/i,
+  // cmd 风格别名：rd /s /q（= Remove-Item -Recurse -Force）
+  /\brd\b[^\n]*?\/[^\n]*?(?:s\b|q\b)/i,
+  // 清空回收站、磁盘/卷/分区/TPM 等破坏性操作
+  /\bClear-RecycleBin\b/i,
   /\bFormat-(?:Volume|Disk|Partition)\b/i,
   /\bClear-(?:Disk|Volume|Partition)\b/i,
   /\bInitialize-Disk\b[^\n]*-?[^\n]*/i,
   /\bdiskpart\b/i,
-  /\b(?:Stop-Computer|Restart-Computer)\b|\bshutdown\b/i,
+  // 关机/重启
+  /\b(?:Stop-Computer|Restart-Computer)\b|\bshutdown\b|\bRestart-Service\b/i,
+  // AD/权限/安全基线类
   /\bRemove-(?:ADUser|ADGroup|ADComputer)\b/i,
   /\bSet-MpPreference\b|\bDisable-MpPreference\b/i,
-  /\b(?:reg\s+delete|sc\s+delete)\b/i,
+  /\bRemove-WindowsCapability\b|\bRemove-WindowsPackage\b/i,
+  // 注册表/服务/计划任务删除
+  /\b(?:reg\s+delete|sc\s+delete|Unregister-ScheduledTask)\b/i,
   /\b(?:Reset-ComputerMachinePassword|Clear-Tpm)\b/i,
+  // 磁盘擦除/低级写
+  /\bClear-Disk\b[^\n]*?(?:-RemoveData|-RemoveOEM)/i,
+  /\bWrite-FileSystemCache\b/i,
 ];
 
 function isHighRisk(command) {
@@ -306,7 +344,7 @@ module.exports = {
           return { approved: false, error: `cwd 不存在：${cwd}，已拒绝。` };
         }
 
-        const shownReason = reason.length > MAX_REASON_CHARS ? truncate(reason, MAX_REASON_CHARS) : reason;
+        const shownReason = reason.length > MAX_REASON_CHARS ? truncateHead(reason, MAX_REASON_CHARS) : reason;
         const highRisk = isHighRisk(command);
         const sessId = sessionIdOf(exec);
 
@@ -330,10 +368,10 @@ module.exports = {
         try {
           outcome = await ask(auditReason, true);
         } catch (e) {
-          appendAudit(`session=${sessId} approval1=error reason=${j(shownReason)} command=${j(command)} error=${j((e && e.message) || String(e))}`);
+          appendAudit(ctx, `session=${sessId} approval1=error reason=${j(shownReason)} command=${j(command)} error=${j((e && e.message) || String(e))}`);
           return { approved: false, outcome: 'error', error: '审批请求失败：' + ((e && e.message) || String(e)) };
         }
-        appendAudit(`session=${sessId} approval1=${outcome} reason=${j(shownReason)} command=${j(command)} cwd=${j(cwd)} highRisk=${highRisk}`);
+        appendAudit(ctx, `session=${sessId} approval1=${outcome} reason=${j(shownReason)} command=${j(command)} cwd=${j(cwd)} highRisk=${highRisk}`);
         if (outcome !== 'allowed-once') {
           return { approved: false, outcome, message: outcomeMessage(outcome) };
         }
@@ -345,10 +383,10 @@ module.exports = {
           try {
             outcome2 = await ask(confirmReason, false);
           } catch (e) {
-            appendAudit(`session=${sessId} approval2=error command=${j(command)} error=${j((e && e.message) || String(e))}`);
+            appendAudit(ctx, `session=${sessId} approval2=error command=${j(command)} error=${j((e && e.message) || String(e))}`);
             return { approved: false, outcome: 'error', error: '高风险二次确认请求失败：' + ((e && e.message) || String(e)) };
           }
-          appendAudit(`session=${sessId} approval2=${outcome2} command=${j(command)} highRisk=true`);
+          appendAudit(ctx, `session=${sessId} approval2=${outcome2} command=${j(command)} highRisk=true`);
           if (outcome2 !== 'allowed-once') {
             const why = outcome2 === 'rejected' ? '第二次确认被拒绝' : outcome2 === 'cancelled' ? '第二次确认被取消' : '第二次确认无人应答';
             return { approved: false, outcome: outcome2, message: `高风险命令未获得二次确认（${why}），未执行。` };
@@ -357,10 +395,10 @@ module.exports = {
 
         const result = await runUnconfined(command, cwd, timeoutMs, exec.signal);
         if (result.error) {
-          appendAudit(`session=${sessId} outcome=allowed-once error=${j(result.error)} command=${j(command)}`);
+          appendAudit(ctx, `session=${sessId} outcome=allowed-once error=${j(result.error)} command=${j(command)}`);
           return { approved: true, outcome, error: result.error };
         }
-        appendAudit(`session=${sessId} outcome=allowed-once exitCode=${result.exitCode} timedOut=${result.timedOut} highRisk=${highRisk} command=${j(command)}`);
+        appendAudit(ctx, `session=${sessId} outcome=allowed-once exitCode=${result.exitCode} timedOut=${result.timedOut} highRisk=${highRisk} command=${j(command)}`);
         return {
           approved: true,
           outcome,
