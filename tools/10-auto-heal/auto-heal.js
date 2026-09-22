@@ -13,12 +13,15 @@
 //   node auto-heal.js                 # 冒烟 + 正式启动（dsh web，默认 3080）
 //   node auto-heal.js --heal-smoke-only   # 只跑冒烟测试并打印结果（排障用）
 //   node auto-heal.js --heal-reset        # 清空禁用清单，恢复所有插件
+//   node auto-heal.js --profile-dir <dir> # 指定 profile 目录（bundle 安装时必须显式传，
+//                                   否则默认取本脚本所在目录；install.bat 方式可省略）
 //   透传参数会原样交给 dsh web：node auto-heal.js --host 0.0.0.0 --port 8080
 //
 // 恢复被禁插件：修好问题后删除 disabled-plugins.yml 里对应两行，或执行 --heal-reset。
 //
 // 环境变量（测试/定制用）：
 //   DSH_BIN                       覆盖 dsh 入口 bin.js 的绝对路径
+//   AUTO_HEAL_PROFILE_DIR         覆盖 profile 目录（等价 --profile-dir）
 //   AUTO_HEAL_DISABLED_FILE       覆盖禁用清单路径（测试隔离用）
 //   AUTO_HEAL_LOG                 覆盖自愈日志路径
 //   AUTO_HEAL_EXTRA_PATCH         启动时额外附加的 overlay patch 列表（分号分隔），
@@ -49,7 +52,18 @@ const fs = require('fs');
 const path = require('path');
 
 // ---------- 常量 ----------
-const HERE = __dirname; // 本脚本所在目录 = profile 目录（profiles/<name>/）
+// profile 目录定位（2026-09-14 BUG-2 修复）：
+// 本脚本既可能被 install.bat 复制到 profile 根（旧方式），也可能随 dsh-tools
+// bundle 装在 node_modules\dsh-tools\tools\10-auto-heal\（新方式），__dirname 不再可靠。
+// 优先级：--profile-dir 参数 > AUTO_HEAL_PROFILE_DIR 环境变量 > __dirname（旧方式兜底）。
+function resolveProfileDir() {
+  const argv = process.argv.slice(2);
+  const i = argv.indexOf('--profile-dir');
+  if (i >= 0 && argv[i + 1]) return path.resolve(argv[i + 1]);
+  if (process.env.AUTO_HEAL_PROFILE_DIR) return path.resolve(process.env.AUTO_HEAL_PROFILE_DIR);
+  return __dirname;
+}
+const HERE = resolveProfileDir(); // profile 目录（profiles/<name>/）
 const PROFILE_PATCH = path.join(HERE, 'cordis.patch.yml'); // 用户插件层（读 id/name 映射用）
 const SMOKE_TIMEOUT_MS = Number(process.env.AUTO_HEAL_SMOKE_TIMEOUT_MS) || 60000; // 冒烟最长等待：默认 60 秒
 const KERNEL_TIMEOUT_MS = Number(process.env.AUTO_HEAL_KERNEL_TIMEOUT_MS) || 30000; // 内核检查最长等待：默认 30 秒
@@ -341,7 +355,16 @@ function startForeground(bin, args) {
       stdio: 'inherit',
     });
     child.on('error', (e) => { log('正式启动失败: ' + String(e)); resolve(1); });
-    child.on('exit', (code) => resolve(code === null ? 0 : code));
+    child.on('exit', (code, signal) => {
+      // BUG-320: code === null 表示被信号终止（如 Ctrl+C / taskkill），不是正常退出，
+      // 不能当 0 处理，否则崩溃/被强杀会被误报为成功退出。
+      if (code === null) {
+        log(`dsh web 被信号终止（${signal || 'unknown'}），非正常退出。`);
+        resolve(1);
+        return;
+      }
+      resolve(code);
+    });
   });
 }
 
@@ -379,7 +402,14 @@ async function main() {
   log(`内核检查通过：${ver}。插件树里哪里出问题就禁哪里。`);
 
   const smokeOnly = argv.includes('--heal-smoke-only');
-  const forwardedArgs = argv.filter((a) => !a.startsWith('--heal-'));
+  // 过滤掉 auto-heal 自己的参数（--heal-* 与 --profile-dir 及其值），其余透传给 dsh web
+  const forwardedArgs = [];
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a.startsWith('--heal-')) continue;
+    if (a === '--profile-dir') { i++; continue; }
+    forwardedArgs.push(a);
+  }
 
   const patchText = fs.existsSync(PROFILE_PATCH) ? fs.readFileSync(PROFILE_PATCH, 'utf8') : '';
   const disabled = readDisabledIds();
